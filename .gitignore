@@ -11,3 +11,9 @@ wheels/
 
 # Environment variables
 .env
+
+# ai generated files
+copilot-instructions.md
+
+# vscode settings
+.vscode/

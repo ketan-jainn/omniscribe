@@ -1,10 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from src.api.routes import health, jobs
 from src.shared.config import settings
 from src.shared.log import configure_logging, get_logger
 
-
-from .routes import health
 
 configure_logging()
 logger = get_logger(__name__)
@@ -19,16 +18,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
     
-app.include_router(health.router)
-
+app.include_router(health.router, prefix="/health")
+app.include_router(jobs.router, tags=["jobs"])
 
 @app.get("/")
 async def index():
     return {"service": "omniscribe api", "status": "ok"}
 
-
-@app.on_event("startup")
-async def startup_event():
-    # Optionally load env or perform startup tasks here
-    env = settings.CONFIG_FILE
-    logger.info("Starting omniscribe API", env=settings.CONFIG_FILE)

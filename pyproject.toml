@@ -10,10 +10,21 @@ dependencies = [
     "boto3>=1.43.18",
     "confluent-kafka>=2.14.0",
     "fastapi>=0.136.3",
+    "httpx2>=2.4.0",
     "psycopg2-binary>=2.9.12",
     "pydantic-settings>=2.14.1",
     "redis>=8.0.0",
     "sqlalchemy>=2.0.50",
     "structlog>=25.5.0",
     "uvicorn[standard]>=0.48.0",
+]
+
+[tool.basedpyright]
+venvPath = "."
+venv = ".venv"
+extraPaths = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
 ]
