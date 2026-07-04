@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from src.api.schemas.jobs import JobCreateRequest, JobResponse
-from src.services.jobs import create_job
+from src.services.jobs import create_job, get_job
 from src.shared.db.base import get_db
 from src.shared.log import get_logger
 
@@ -23,6 +23,24 @@ def post_job(
     response.status_code = (
         status.HTTP_202_ACCEPTED if created else status.HTTP_200_OK
     )
+
+    return JobResponse(
+        job_id=job.id,
+        status=job.status.value if hasattr(job.status, "value") else str(job.status),
+        user_id=job.user_id,
+        created_at=job.created_at,
+        idempotency_key=job.idempotency_key,
+    )
+
+
+@router.get("/v1/jobs/{job_id}", response_model=JobResponse)
+def get_job_by_id(job_id: str, db: Session = Depends(get_db)):
+    job = get_job(job_id, db)
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
 
     return JobResponse(
         job_id=job.id,

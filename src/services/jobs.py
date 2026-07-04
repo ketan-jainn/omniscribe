@@ -7,6 +7,11 @@ from src.shared.log import get_logger
 
 logger = get_logger(__name__)
 
+
+def get_job(job_id: str, db: Session) -> Job | None:
+    return db.query(Job).filter_by(id=job_id).first()
+
+
 def create_job(request: JobCreateRequest, db: Session):
     # Check for existing job with the same idempotency key
     logger.info("Creating job", request=request)

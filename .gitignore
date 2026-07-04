@@ -1,6 +1,7 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+test.db
 build/
 dist/
 wheels/

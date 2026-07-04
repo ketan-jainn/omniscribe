@@ -1,7 +1,9 @@
 import pytest
+from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from src.api.main import app # Import your main FastAPI app
 from src.shared.db.base import Base, get_db # Import your Base and get_db
@@ -9,10 +11,12 @@ from src.shared.db.models import Job, JobStatus # Import your Job model
 from src.api.schemas.jobs import JobCreateRequest # Import your request schema
 
 # --- Database setup for testing ---
-# Use an in-memory SQLite database for fast, isolated tests
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db" # Or "sqlite:///:memory:" for pure in-memory
+# Use an in-memory SQLite database for fast, isolated tests.
+SQLALCHEMY_DATABASE_URL = "sqlite://"
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    SQLALCHEMY_DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -33,7 +37,11 @@ client = TestClient(app)
 def db_session_fixture():
     # Create the database tables before each test
     Base.metadata.create_all(bind=engine)
-    yield TestingSessionLocal()
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
     # Drop the database tables after each test
     Base.metadata.drop_all(bind=engine)
 
@@ -98,6 +106,35 @@ def test_idempotent_job_creation(db_session: Session):
     assert len(jobs_in_db) == 1
     assert jobs_in_db[0].id == job_id1
 
+
+def test_get_job_by_id(db_session: Session):
+    user_id = "test_user_get"
+    idempotency_key = "test_key_get"
+    payload = JobCreateRequest(
+        user_id=user_id,
+        idempotency_key=idempotency_key,
+        chunks=["s3://test-bucket/chunk-get.mp3"],
+    ).model_dump()
+
+    create_response = client.post("/v1/jobs", json=payload)
+    assert create_response.status_code == status.HTTP_202_ACCEPTED
+    job_id = create_response.json()["job_id"]
+
+    response = client.get(f"/v1/jobs/{job_id}")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["job_id"] == job_id
+    assert data["user_id"] == user_id
+    assert data["idempotency_key"] == idempotency_key
+
+
+def test_get_job_by_id_returns_404_for_missing_job(db_session: Session):
+    response = client.get("/v1/jobs/missing-job-id")
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json() == {"detail": "Job not found"}
+
 def test_create_job_with_missing_required_field():
     """
     Test that missing required fields result in a 422 Unprocessable Entity.
@@ -108,7 +145,7 @@ def test_create_job_with_missing_required_field():
         # user_id is missing
     }
     response = client.post("/v1/jobs", json=payload)
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
     assert "detail" in response.json()
     assert any("user_id" in error["loc"] for error in response.json()["detail"])
 
@@ -116,13 +153,13 @@ def test_create_job_with_invalid_chunks_list():
     """
     Test that invalid chunks list (e.g., empty) results in a 422 Unprocessable Entity.
     """
-    payload = JobCreateRequest(
-        user_id="test_user_789",
-        idempotency_key="invalid_chunks_key",
-        chunks=[] # Invalid: min_items=1
-    ).model_dump()
+    payload = {
+        "user_id": "test_user_789",
+        "idempotency_key": "invalid_chunks_key",
+        "chunks": [],
+    }
 
     response = client.post("/v1/jobs", json=payload)
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
     assert "detail" in response.json()
     assert any("chunks" in error["loc"] for error in response.json()["detail"])

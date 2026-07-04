@@ -16,8 +16,11 @@ The current codebase includes:
 
 - FastAPI application entrypoint
 - Health check endpoints
+- Job creation and lookup endpoints
 - SQLAlchemy models and session setup
 - Alembic migrations
+- Shared Kafka message contracts and thin producer/consumer wrappers
+- Runnable scheduler and worker entrypoints
 - Kafka topic bootstrap script
 - Local Docker Compose stack for Postgres, Redis, MinIO, and Redpanda
 
@@ -101,6 +104,15 @@ python -m scripts.create_topics
 uvicorn src.api.main:app --reload --port 8000
 ```
 
+### 7. Run Phase 0 service shells
+
+These processes start and subscribe to their Kafka topics. Passthrough scheduling and transcription processing are added in Phase 1.
+
+```bash
+python -m src.scheduler.main
+python -m src.worker.main
+```
+
 ## Health Checks
 
 The API currently exposes:
@@ -108,11 +120,14 @@ The API currently exposes:
 - `GET /` - basic service status
 - `GET /health/live` - liveness check
 - `GET /health/ready` - readiness check that verifies database connectivity
+- `POST /v1/jobs` - create a transcription job
+- `GET /v1/jobs/{job_id}` - fetch job metadata
 
 ## Database Models
 
 The main data model currently includes:
 
+- `users` - user identity and future rate-limit tier data
 - `jobs` - transcription job metadata
 - `chunks` - chunk-level upload and processing state
 - `segments` - transcript segments produced by workers
@@ -147,4 +162,4 @@ The longer-term architecture is documented in the repo’s architecture notes an
 
 ## Status
 
-This project is under active development. The current repo contains the foundation for the transcription platform, with the API and infrastructure pieces in place and the background processing pipeline being built out in phases.
+This project is under active development. Phase 0 foundation is in place: local infrastructure, database schema, health checks, job metadata APIs, shared Kafka contracts, topic creation, and runnable scheduler/worker shells. Phase 1 will add upload handling, passthrough scheduling, and real transcription processing.

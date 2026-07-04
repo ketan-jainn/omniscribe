@@ -10,7 +10,7 @@ sys.path.insert(0, os.getcwd())
 from src.shared.config import settings
 from src.shared.db.base import Base
 # Import all models so they are registered on Base.metadata
-from src.shared.db.models import Job, Chunk, Segment 
+from src.shared.db.models import Chunk, Job, Segment, User
 
 config = context.config
 

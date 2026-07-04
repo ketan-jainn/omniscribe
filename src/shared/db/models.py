@@ -31,6 +31,16 @@ class JobStatus(PyEnum):
     DLQ = "DLQ"
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String(128), primary_key=True)
+    plan = Column(String(32), nullable=False, default="free")
+    rate_limit_tier = Column(String(32), nullable=False, default="default")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class Job(Base):
     __tablename__ = "jobs"
 
