@@ -1,20 +1,35 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-test.db
-build/
-dist/
-wheels/
-*.egg-info
+# Maven build output
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
 
-# Virtual environments
-.venv
+# Maven wrapper
+.mvn/
 
-# Environment variables
-.env
-
-# ai generated files
-copilot-instructions.md
-
-# vscode settings
+# IDE / Editor configuration
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.factorypath
 .vscode/
+
+# Logs
+*.log
+logs/
+
+# Environment variables & secrets
+.env
+.env.local
+
+# Operating System files
+.DS_Store
+Thumbs.db

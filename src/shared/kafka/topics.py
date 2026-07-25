@@ -1,6 +1,0 @@
-TOPIC_INGRESS = "transcription.ingress"
-TOPIC_JOBS = "transcription.jobs"
-TOPIC_SEGMENTS = "transcription.segments"
-TOPIC_RETRY_30S = "transcription.jobs.retry.30s"
-TOPIC_RETRY_5M = "transcription.jobs.retry.5m"
-TOPIC_DLQ = "transcription.dlq"

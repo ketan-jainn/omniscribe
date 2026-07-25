@@ -1,165 +1,103 @@
 # Omniscribe
 
-Omniscribe is an async transcription platform for large audio and video files. The intended flow is:
+Omniscribe is an async transcription platform for large audio and video files built with Java 21 and Spring Boot.
 
-- Clients create jobs through the API
-- Files are stored in S3-compatible object storage
-- Work is queued through Kafka-compatible topics
-- Workers transcribe chunks and persist segments
-- The API exposes health checks and, later, live transcript streaming
+- Clients create jobs through the API (`POST /v1/jobs` with `Idempotency-Key` header)
+- Files are stored in S3-compatible object storage (MinIO locally)
+- Work is queued through Kafka topics (`transcription.ingress`, `transcription.jobs`, `transcription.segments`)
+- Workers transcribe chunks and persist segments to PostgreSQL
+- The API exposes health checks (`/health/live`, `/health/ready`) and job lookup (`GET /v1/jobs/{job_id}`)
 
-## Overview
+---
 
-This repository is structured as a Python backend platform with separate pieces for API, background processing, and shared infrastructure code.
+## Service Architecture
 
-The current codebase includes:
+The repository is structured as a Spring Boot 3.4+ Java platform with explicit service layers and separate runtime execution capabilities for API, Scheduler, and Worker.
 
-- FastAPI application entrypoint
-- Health check endpoints
-- Job creation and lookup endpoints
-- SQLAlchemy models and session setup
-- Alembic migrations
-- Shared Kafka message contracts and thin producer/consumer wrappers
-- Runnable scheduler and worker entrypoints
-- Kafka topic bootstrap script
-- Local Docker Compose stack for Postgres, Redis, MinIO, and Redpanda
-
-## Tech Stack
-
-- Python 3.11+
-- FastAPI
-- SQLAlchemy
-- Alembic
-- PostgreSQL
-- Redis
-- Kafka / Redpanda
-- MinIO
-- Pydantic Settings
-- structlog
-- uvicorn
-
-## Project Layout
-
-- `src/api` - FastAPI app and HTTP routes
-- `src/shared` - shared config, logging, database, and Kafka helpers
-- `src/scheduler` - message scheduling logic
-- `src/worker` - transcription worker logic
-- `migrations` - Alembic migrations
-- `deploy` - Docker Compose for local infrastructure
-- `scripts` - utility scripts such as Kafka topic creation
-- `tests` - automated tests
-- `docs` - architecture and planning notes
-
-## Local Development
-
-### 1. Install dependencies
-
-This project is managed with modern Python packaging. Use your preferred environment tool, then install dependencies from the project metadata.
-
-### 2. Configure environment variables
-
-Copy the example environment file and adjust values if needed.
-
-Required values are documented in the example file and include:
-
-- `DATABASE_URL`
-- `KAFKA_BOOTSTRAP_SERVERS`
-- `S3_ENDPOINT`
-- `S3_BUCKET`
-- `S3_ACCESS_KEY`
-- `S3_SECRET_KEY`
-- `REDIS_URL`
-- `LOG_LEVEL`
-
-### 3. Start local infrastructure
-
-Use Docker Compose to start the supporting services:
-
-```bash
-docker compose -f deploy/docker-compose.yml up -d
+```
+omniscribe/
+├── deploy/                       # DevOps & Container Infrastructure Configuration
+│   ├── Dockerfile                # Multi-stage Container Build
+│   └── docker-compose.yml        # Full Stack System Orchestration
+├── pom.xml                       # Maven Project Configuration
+├── src/
+│   ├── main/
+│   │   ├── java/com/omniscribe/
+│   │   │   ├── config/           # Kafka, CORS, Web configuration
+│   │   │   ├── controllers/      # JobController, HealthController, RootController, GlobalExceptionHandler
+│   │   │   ├── dto/              # Business Layer DTOs (UserDto, JobDto, ChunkDto, SegmentDto)
+│   │   │   ├── mappers/          # MapStruct Mappers (UserMapper, JobMapper, ChunkMapper, SegmentMapper)
+│   │   │   ├── models/           # Entities (User, Job, Chunk, Segment), DTO records, Message Contracts
+│   │   │   ├── repositories/     # UserRepository, JobRepository, ChunkRepository, SegmentRepository
+│   │   │   ├── services/         # JobService, SchedulerService, WorkerService
+│   │   │   ├── services/impl/    # JobServiceImpl, SchedulerServiceImpl, WorkerServiceImpl
+│   │   │   └── messaging/        # KafkaPublisher
+│   │   └── resources/
+│   │       ├── application.yml
+│   │       └── db/migration/     # Flyway SQL Schema Migrations (V1__initial_schema.sql)
+│   └── test/                     # Integration & Unit Tests (H2 / MockMvc)
+├── docs/                         # System Architecture documentation & Handover notes
+└── README.md
 ```
 
-This starts:
+---
 
-- PostgreSQL on port 5432
-- Redis on port 6379
-- MinIO on ports 9000 and 9001
-- Redpanda on port 9092
+## Single Command Execution
 
-### 4. Apply database migrations
+To launch the **entire system** (PostgreSQL, Redis, MinIO, Redpanda Kafka, Spring Boot API, Scheduler, and Worker services):
 
 ```bash
-alembic upgrade head
+docker compose -f deploy/docker-compose.yml up --build -d
 ```
+*Alternatively from the workspace root: `docker compose up --build -d`*
 
-### 5. Create Kafka topics
+Services started:
+- **Spring Boot API**: `http://localhost:8080`
+- **Spring Boot Scheduler**: `http://localhost:8081`
+- **Spring Boot Worker**: `http://localhost:8082`
+- **PostgreSQL**: `localhost:5432` (`omniscribe_db`)
+- **Redis**: `localhost:6379`
+- **MinIO S3**: `localhost:9000` (Console: `localhost:9002`)
+- **Redpanda Kafka**: `localhost:9092`
 
+---
+
+## Local Maven Development
+
+### Run Integration Tests
 ```bash
-python -m scripts.create_topics
+mvn clean test
 ```
 
-### 6. Run the API
-
+### Build Executable JAR
 ```bash
-uvicorn src.api.main:app --reload --port 8000
+mvn clean package -DskipTests
 ```
 
-### 7. Run Phase 0 service shells
-
-These processes start and subscribe to their Kafka topics. Passthrough scheduling and transcription processing are added in Phase 1.
-
+### Run API Server Locally
 ```bash
-python -m src.scheduler.main
-python -m src.worker.main
+mvn spring-boot:run
 ```
 
-## Health Checks
+---
 
-The API currently exposes:
+## API Endpoints & Specifications
 
-- `GET /` - basic service status
-- `GET /health/live` - liveness check
-- `GET /health/ready` - readiness check that verifies database connectivity
-- `POST /v1/jobs` - create a transcription job
-- `GET /v1/jobs/{job_id}` - fetch job metadata
+| Method | Path | Request Headers | Description | Status Codes |
+|---|---|---|---|---|
+| `GET` | `/` | - | Root index endpoint | `200 OK` |
+| `GET` | `/health/live` | - | Liveness health check | `200 OK` |
+| `GET` | `/health/ready` | - | Readiness check (verifies PostgreSQL connection) | `200 OK` / `503 Service Unavailable` |
+| `POST` | `/v1/jobs` | `Idempotency-Key: <key>` | Idempotent job creation | `202 Accepted` (new), `200 OK` (duplicate key), `422 Unprocessable Entity` (missing header/fields) |
+| `GET` | `/v1/jobs/{job_id}` | - | Job details lookup | `200 OK`, `404 Not Found` (`{"detail": "Job not found"}`) |
 
-## Database Models
+---
 
-The main data model currently includes:
+## Kafka Messaging Topics
 
-- `users` - user identity and future rate-limit tier data
-- `jobs` - transcription job metadata
-- `chunks` - chunk-level upload and processing state
-- `segments` - transcript segments produced by workers
-
-## Kafka Topics
-
-The shared topic names are:
-
-- `transcription.ingress`
-- `transcription.jobs`
-- `transcription.segments`
-- `transcription.jobs.retry.30s`
-- `transcription.jobs.retry.5m`
-- `transcription.dlq`
-
-## Testing
-
-Run the current test suite with:
-
-```bash
-pytest
-```
-
-## Architecture Notes
-
-The longer-term architecture is documented in the repo’s architecture notes and roadmap. The intended service split is:
-
-- API for job creation, readiness, and transcript delivery
-- Scheduler for moving work from ingress into execution
-- Worker for transcription and persistence
-- Shared contracts for models, topic names, and infrastructure helpers
-
-## Status
-
-This project is under active development. Phase 0 foundation is in place: local infrastructure, database schema, health checks, job metadata APIs, shared Kafka contracts, topic creation, and runnable scheduler/worker shells. Phase 1 will add upload handling, passthrough scheduling, and real transcription processing.
+- `transcription.ingress`: Initial chunk job messages created by API.
+- `transcription.jobs`: Scheduled job work consumed by worker pool.
+- `transcription.segments`: Transcribed segment output published by worker.
+- `transcription.jobs.retry.30s`: Delayed 30-second retry queue.
+- `transcription.jobs.retry.5m`: Delayed 5-minute retry queue.
+- `transcription.dlq`: Dead Letter Queue for failed job events.

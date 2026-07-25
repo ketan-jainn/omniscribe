@@ -39,7 +39,6 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: omniscribe-minio
     entrypoint: sh
-    # Automatically creates a default bucket named 'omniscribe-chunks' on startup
     command: -c "mkdir -p /data/omniscribe-chunks && minio server /data --console-address ':9001'"
     environment:
       MINIO_ROOT_USER: minio_admin
@@ -69,7 +68,7 @@ services:
       - --pandaproxy-addr 0.0.0.0:8082
       - --advertise-pandaproxy-addr localhost:8082
     ports:
-      - "9092:9092"   # Exposed to your local machine (FastAPI, Worker running locally)
+      - "9092:9092"   # Exposed to local host
       - "8082:8082"   # Redpanda HTTP Proxy API
       - "19644:9644" # Redpanda Admin API
     volumes:
@@ -79,6 +78,68 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  # --- Spring Boot API Service ---
+  spring-boot-api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: omniscribe-spring-api
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/omniscribe_db
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres_password
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      SERVER_PORT: 8080
+      OMNISCRIBE_SCHEDULER_ENABLED: "false"
+      OMNISCRIBE_WORKER_ENABLED: "false"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+
+  # --- Spring Boot Scheduler Service ---
+  spring-boot-scheduler:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: omniscribe-spring-scheduler
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/omniscribe_db
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres_password
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      SERVER_PORT: 8081
+      OMNISCRIBE_SCHEDULER_ENABLED: "true"
+      OMNISCRIBE_WORKER_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+
+  # --- Spring Boot Worker Service ---
+  spring-boot-worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: omniscribe-spring-worker
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/omniscribe_db
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres_password
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      SERVER_PORT: 8082
+      OMNISCRIBE_SCHEDULER_ENABLED: "false"
+      OMNISCRIBE_WORKER_ENABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
 
 volumes:
   postgres_data:
