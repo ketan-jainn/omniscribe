@@ -12,19 +12,19 @@ def get_job(job_id: str, db: Session) -> Job | None:
     return db.query(Job).filter_by(id=job_id).first()
 
 
-def create_job(request: JobCreateRequest, db: Session):
+def create_job(request: JobCreateRequest, db: Session, idempotency_key: str):
     # Check for existing job with the same idempotency key
-    logger.info("Creating job", request=request)
+    logger.info("Creating job", request=request, idempotency_key=idempotency_key)
     if request is not None:
-        logger.info("Checking for existing job", idempotency_key=request.idempotency_key)
-        existing_job = db.query(Job).filter_by(idempotency_key=request.idempotency_key).first()
+        logger.info("Checking for existing job", idempotency_key=idempotency_key)
+        existing_job = db.query(Job).filter_by(idempotency_key=idempotency_key).first()
         if existing_job:
             return existing_job, False
     
     # Create new job
     new_job = Job(
         user_id=request.user_id,
-        idempotency_key=request.idempotency_key,
+        idempotency_key=idempotency_key,
         status=JobStatus.PENDING_UPLOAD,
     )
     db.add(new_job)
@@ -36,12 +36,12 @@ def create_job(request: JobCreateRequest, db: Session):
         db.rollback()
         existing_job = (
             db.query(Job)
-            .filter_by(user_id=request.user_id, idempotency_key=request.idempotency_key)
+            .filter_by(user_id=request.user_id, idempotency_key=idempotency_key)
             .first()
         )
         return existing_job, False
     except Exception as e:
         db.rollback()
         logger.error("Unexpected error during job creation", error=str(e),
-                     user_id=request.user_id, idempotency_key=request.idempotency_key)
+                     user_id=request.user_id, idempotency_key=idempotency_key)
         raise # Re-raise other exceptions to be handled by higher layers (e.g., FastAPI exception handlers)

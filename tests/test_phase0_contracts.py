@@ -17,7 +17,7 @@ def test_chunk_message_contract():
 
 
 def test_segment_message_contract():
-    message = SegmentMessage(
+    message = SegmentMessage(b
         job_id="job-1",
         user_id="user-1",
         chunk_index=0,

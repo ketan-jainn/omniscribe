@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from typing import Annotated
+from fastapi import APIRouter, Depends, HTTPException, Header, Response, status
 from sqlalchemy.orm import Session
 
 from src.api.schemas.jobs import JobCreateRequest, JobResponse
@@ -14,11 +15,15 @@ router = APIRouter()
 def post_job(
     req: JobCreateRequest,
     response: Response,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=255),
+    ],
     db: Session = Depends(get_db),
 ):
-    logger.info("Creating job", user_id=req.user_id)
+    logger.info("Creating job", user_id=req.user_id, idempotency_key=idempotency_key)
 
-    job, created = create_job(req, db)
+    job, created = create_job(req, db, idempotency_key)
 
     response.status_code = (
         status.HTTP_202_ACCEPTED if created else status.HTTP_200_OK

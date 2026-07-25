@@ -54,11 +54,14 @@ def test_create_new_job(db_session: Session):
     idempotency_key = "test_key_abc"
     payload = JobCreateRequest(
         user_id=user_id,
-        idempotency_key=idempotency_key,
         chunks=["s3://test-bucket/chunk1.mp3"]
     ).model_dump()
 
-    response = client.post("/v1/jobs", json=payload)
+    response = client.post(
+        "/v1/jobs",
+        json=payload,
+        headers={"Idempotency-Key": idempotency_key},
+    )
 
     assert response.status_code == status.HTTP_202_ACCEPTED
     data = response.json()
@@ -81,18 +84,25 @@ def test_idempotent_job_creation(db_session: Session):
     idempotency_key = "test_key_def"
     payload = JobCreateRequest(
         user_id=user_id,
-        idempotency_key=idempotency_key,
         chunks=["s3://test-bucket/chunk2.mp3"]
     ).model_dump()
 
     # First request: should create a new job (202 Accepted)
-    response1 = client.post("/v1/jobs", json=payload)
+    response1 = client.post(
+        "/v1/jobs",
+        json=payload,
+        headers={"Idempotency-Key": idempotency_key},
+    )
     assert response1.status_code == status.HTTP_202_ACCEPTED
     data1 = response1.json()
     job_id1 = data1["job_id"]
 
     # Second request with the same idempotency key: should return the existing job (200 OK)
-    response2 = client.post("/v1/jobs", json=payload)
+    response2 = client.post(
+        "/v1/jobs",
+        json=payload,
+        headers={"Idempotency-Key": idempotency_key},
+    )
     assert response2.status_code == status.HTTP_200_OK
     data2 = response2.json()
     job_id2 = data2["job_id"]
@@ -112,11 +122,14 @@ def test_get_job_by_id(db_session: Session):
     idempotency_key = "test_key_get"
     payload = JobCreateRequest(
         user_id=user_id,
-        idempotency_key=idempotency_key,
         chunks=["s3://test-bucket/chunk-get.mp3"],
     ).model_dump()
 
-    create_response = client.post("/v1/jobs", json=payload)
+    create_response = client.post(
+        "/v1/jobs",
+        json=payload,
+        headers={"Idempotency-Key": idempotency_key},
+    )
     assert create_response.status_code == status.HTTP_202_ACCEPTED
     job_id = create_response.json()["job_id"]
 
@@ -135,16 +148,33 @@ def test_get_job_by_id_returns_404_for_missing_job(db_session: Session):
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json() == {"detail": "Job not found"}
 
+
+def test_create_job_requires_idempotency_key_header():
+    payload = {
+        "user_id": "test_user_missing_header",
+        "chunks": ["s3://test-bucket/chunk3.mp3"],
+    }
+
+    response = client.post("/v1/jobs", json=payload)
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    assert "detail" in response.json()
+    assert any("Idempotency-Key" in str(error["loc"]) for error in response.json()["detail"])
+
+
 def test_create_job_with_missing_required_field():
     """
     Test that missing required fields result in a 422 Unprocessable Entity.
     """
     payload = {
-        "idempotency_key": "bad_request_key",
         "chunks": ["s3://test-bucket/chunk3.mp3"]
         # user_id is missing
     }
-    response = client.post("/v1/jobs", json=payload)
+    response = client.post(
+        "/v1/jobs",
+        json=payload,
+        headers={"Idempotency-Key": "bad_request_key"},
+    )
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
     assert "detail" in response.json()
     assert any("user_id" in error["loc"] for error in response.json()["detail"])
@@ -155,11 +185,14 @@ def test_create_job_with_invalid_chunks_list():
     """
     payload = {
         "user_id": "test_user_789",
-        "idempotency_key": "invalid_chunks_key",
         "chunks": [],
     }
 
-    response = client.post("/v1/jobs", json=payload)
+    response = client.post(
+        "/v1/jobs",
+        json=payload,
+        headers={"Idempotency-Key": "invalid_chunks_key"},
+    )
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
     assert "detail" in response.json()
     assert any("chunks" in error["loc"] for error in response.json()["detail"])
